@@ -1,3 +1,5 @@
+'use strict'; 
+
 let express = require('express');
 let router = express.Router({
     strict: true
@@ -10,118 +12,84 @@ const path = require('path');
 let compiled = {};
 
 try {
-    let indexController = (fs.existsSync(process.env.BASEPATH + '/www/html/index.js') ? 'html/index' : null);
-    if (fs.existsSync(process.env.BASEPATH + '/www/view/index.pug')) {
-        addGet('/', indexController, 'index.pug');
-        console.log('Adding site route for index.pug at /');
-    }
-
-    if (checkFor(process.env.BASEPATH + '/www/view')) {
-        checkFor(process.env.BASEPATH + '/www/html');
-        // Iterate through the view folder, assign each pug file a route from the html folder, if it exists
-        fs.readdirSync(process.env.BASEPATH + '/www/view').forEach(file => {
-            if (path.extname(file) == ".pug") {
-                let base = file.substr(0, file.length - 4);
-                if (base != 'index' && base != 'base' && base != 'mixins') {
-                    let path = '/' + base + '.html';
-                    var controller = 'html/' + base + '.js';
-                    if (!fs.existsSync(controller)) controller = null;
-                    addGet(path, controller, file);
-                    console.log('Adding site route for', file, 'at', path);
-                }
-            }
-        });
-    }
-
-    if (checkFor(process.env.BASEPATH + '/www/json')) {
-        // Iterate through the api folder and assign a route to each
-        fs.readdirSync(process.env.BASEPATH + '/www/json').forEach(file => {
-            if (path.extname(file) == ".js") {
-                let base = file.substr(0, file.length - 3);
-                    let path = '/api/' + base + '.json';
-                    addGet(path, 'json/' + base + '.js');
-                    console.log('Adding api route for', file, 'at', path);
-                }
-        });
+    if (checkFor(process.env.BASEPATH + '/www/controllers')) {
+        addControllers(process.env.BASEPATH + '/www/controllers');
     }
 } catch (e) {
     console.log(e);
 }
 
-async function doStuff(req, res, next, controllerFile, pugFile) {
+function addControllers(file_path) {
+    console.log('Controller searching within', file_path)
+    fs.readdirSync(file_path).forEach(file => { 
+        var full_path = file_path + '/' + file;
+        if (fs.lstatSync(full_path).isDirectory()) {
+            addControllers(full_path);
+        } else if (path.extname(file) == ".js") {
+            let controller = require(full_path);
+            if (!Array.isArray(controller.paths)) controller.paths = [controller.paths];
+            if (controller.paths) controller.paths.forEach((controllerPath) => {
+                addGet(controllerPath, controller, file);
+                console.log('Adding site route for', file, 'at', controllerPath);
+            });
+        }
+    });
+}
+
+async function doStuff(req, res, next, controller, pugFile) {
     const app = req.app.app;
     let result = {};
     try {
-        if (controllerFile != null) {
-            const file = process.env.BASEPATH + '/www/' + controllerFile;
-            let controller = require(file);
+        req.verify_query_params = verify_query_params;
 
-            req.verify_query_params = verify_query_params;
+        //if (await if_rendered_send(app, req, res)) return;
 
-            if (await if_rendered_send(app, req, res)) return;
+        result = wrap_promise(controller.get(req, res)); // TODO handle POST, HEAD, etc
+        await app.sleep(1);
 
-            result = wrap_promise(controller(req, res));
+        // Allow up to 15 seconds for the request to finish, or redirect to the same URL to try again
+        let now = app.now();
+        while (result.isFinished() == false) {
+            if ((app.now() - now) > 15) return; // bailing
             await app.sleep(1);
+        }
+        result = await result;
 
-            let now = app.now();
-            while (result.isFinished() == false) {
-                if ((app.now() - now) > 15) {
-                    res.redirect(req.url);
-                    res.end();
-                    return;
-                }
-                await app.sleep(1);
+        if (result.content_type != undefined) res.setHeader("Content-Type", result.content_type);
+        if (result.status_code != undefined) res.sendStatus(status_code);
+        if (result.ttl > 0) res.set('Cache-Control', 'public, max-age=' + result.ttl);
+
+        if (result.redirect) res.redirect(result.redirect);
+        else if (result.json !== undefined) res.json(result.json);
+        else if (result.view !== undefined) {
+            if (compiled[result.view] == null) {
+                compiled[result.view] = pug.compileFile(process.env.BASEPATH + '/www/views/' + result.view);
             }
+            let o = {};
+            Object.assign(o, res.locals);
+            Object.assign(o, result.package);
 
-            result = await result;
-        }
+            let render = compiled[result.view];
+            let rendered = render(o, {
+                debug: true,
+                cache: false
+            });
+            
+            res.send(rendered);
+        } else res.send(result.package);
 
-        if (result == undefined) result = null;
-        let maxAge = Math.min(3600, (result == null ? 0 : (result.maxAge || 0)));
-        if (result != undefined && result.content_type != undefined) res.setHeader("Content-Type", result.content_type)
-        
-        if (result === null || result === undefined) {
-            res.sendStatus(404);
-        } else if (typeof result === "object") {
-            if (pugFile !== undefined) {
-                if (await if_rendered_send(app, req, res)) return;
 
-                if (compiled[pugFile] == null) {
-                    compiled[pugFile] = pug.compileFile(process.env.BASEPATH + '/www/view/' + pugFile);
-                }
-                let o = {};
-                Object.assign(o, res.locals);
-                Object.assign(o, result);
-
-                let render = compiled[pugFile];
-                let rendered = render(o, {
-                    debug: true,
-                    cache: false
-                });
-                
-                if (maxAge > 0) res.set('Cache-Control', 'public, max-age=' + maxAge);
-                res.send(rendered);
-
-                if (maxAge > 0 && app.redis) await app.redis.setex('rendered:' + req.url, maxAge, rendered);
-            } else if (result.json !== undefined) res.json(result.json);
-        } else if (typeof result == "string") {
-            res.redirect(result);
-        } else if (result === 204) {
-            res.status(204);
-        }
-        res.end();
-        result = {}; // Clear it out for quicker GC
     } catch (e) {
         console.log(e);
     } finally {
-        if (app.redis) await app.redis.del('req:' + req.url);
+        result = {}; // Clear it out for quicker GC
+        res.end();
     }
 }
 
-function addGet(route, controllerFile, pugFile) {
-    //if (pugFile == undefined) pugFile = controllerFile;
+function addGet(route, controller, pugFile) {
     router.get(route, (req, res, next) => {
-        doStuff(req, res, next, controllerFile, pugFile);
+        doStuff(req, res, next, controller, pugFile);
     });
 }
 
@@ -222,7 +190,7 @@ function rebuild_query(base_url, query_params, valid_array, required) {
         }
     }
 
-    keys = Object.keys(rebuild).sort();
+    let keys = Object.keys(rebuild).sort();
     let url = base_url;
     let first = true;
     let added = false;

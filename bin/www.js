@@ -32,7 +32,7 @@ async function startWebListener() {
     www.set('views', www.root + 'www/views');
     www.set('view engine', 'pug');
 
-    if (process.env.ENABLE_ETAG == true) www.enable('etag');
+    if (process.env.ENABLE_ETAG == 'true') www.enable('etag');
     
     www.use((req, res, next) => {
         res.locals.server_started = server_started;
