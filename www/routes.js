@@ -44,7 +44,7 @@ async function doStuff(req, res, next, controller, pugFile) {
 
         //if (await if_rendered_send(app, req, res)) return;
 
-        result = wrap_promise(controller.get(req, res)); // TODO handle POST, HEAD, etc
+        result = wrap_promise(controller.call(req, res)); // TODO handle POST, HEAD, etc
         await app.sleep(1);
 
         // Allow up to 15 seconds for the request to finish, or redirect to the same URL to try again

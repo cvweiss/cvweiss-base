@@ -1,6 +1,6 @@
 'use strict';
 
-module.exports = function(jobType) { 
+module.exports = function (jobType) {
 	switch(jobType) {
 		case 'www':
 			return require('./bin/www.js');
@@ -12,6 +12,6 @@ module.exports = function(jobType) {
 			break;
 		default:
 			console.error('Unknown job type', jobType);
-			console.error('Valid job types are www, cron, init');
+			console.error('Valid job types are www, cron, init'); 
 	}
 }

@@ -9,24 +9,29 @@ async function getApp() {
         app = await req();
 
         if (app.redis == undefined) {
-            console.error('REDIS_LOAD=true is required for cronjobs');
-            process.exit();
+            console.error('REDIS_LOAD=true is required within your .env (or environment) for cronjobs');
+            process.exit(1);
         }
     }
     return app;
 }
 
 function loadTasks(app) {
-
-    if (!fs.existsSync(process.env.BASEPATH + '/cron/')) {
+    const cron_path = process.env.BASEPATH + '/cron/';
+    if (!fs.existsSync(cron_path)) {
         console.error("No cron directory");
-        process.exit();
+        process.exit(2);
     }
+    console.log('Looking for cron files within ' + cron_path);
 
     let tasks = {};
-    fs.readdirSync(process.env.BASEPATH + '/cron').forEach(file => {
-        let cron = require(process.env.BASEPATH + '/cron/' + file);
+    fs.readdirSync(cron_path).forEach(file => {
+        let file_path = process.env.BASEPATH + '/cron/' + file;
+        let cron = require(file_path);
         tasks[file] = createTaskSettings(cron);
+        let cron_about = 'Loaded ' + file + ' to execute every ' + tasks[file].span + ' second interval';
+        if (tasks[file].offset != 0) cron_about += ' with an offset of ' + tasks[file].offset + ' seconds';
+        console.log(cron_about);
     });
 
     return tasks;
@@ -95,11 +100,11 @@ async function runTasks(app, tasks) {
                 await app.redis.del("RESTART");
                 console.log("Restarting...");
                 await app.sleep(1000);
-                process.exit();
+                process.exit(0);
             }
             console.log("STOPPED");
             await app.sleep(1000);
-            process.exit();
+            process.exit(0);
         }
 
         let now = app.now();
@@ -134,7 +139,6 @@ async function runTasks(app, tasks) {
 
 async function runTask(task, f, app, curKey, runKey, iteration) {
     try {
-        console.log(task + ' starting');
         await f(app, iteration);
     } catch (e) {
         console.log(task + ' failure:');
