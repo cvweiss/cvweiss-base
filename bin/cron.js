@@ -53,9 +53,9 @@ if (process.argv[2]) {
 function createTaskSettings(params) {
     return {
         exec: params.exec,
-        span: params.span | 1,
-        iterations: params.iterations | 0,
-        offset: params.offset | 0
+        span: params.span || 1,
+        iterations: params.iterations || 0,
+        offset: params.offset || 0
     };
 }
 
