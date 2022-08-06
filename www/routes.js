@@ -1,5 +1,7 @@
 'use strict'; 
 
+const routes = {};
+
 let express = require('express');
 let router = express.Router({
     strict: true
@@ -10,6 +12,8 @@ const pug = require('pug');
 const fs = require('fs');
 const path = require('path');
 let compiled = {};
+
+const http_methods = ['connect', 'delete', 'get', 'head', 'options', 'patch', 'post', 'put', 'trace'];
 
 try {
     if (checkFor(process.env.BASEPATH + '/www/controllers')) {
@@ -29,14 +33,18 @@ function addControllers(file_path) {
             let controller = require(full_path);
             if (!Array.isArray(controller.paths)) controller.paths = [controller.paths];
             if (controller.paths) controller.paths.forEach((controllerPath) => {
-                addGet(controllerPath, controller, file);
-                console.log('Adding site route for', file, 'at', controllerPath);
+                for (const method of http_methods) {
+                    if (typeof controller[method] == 'function') {
+                        if (controller[method]) addRoute(method, controllerPath, controller, file);
+                        console.log('Adding', method.toUpperCase(), 'route for', file, 'at', controllerPath);
+                    }
+                }
             });
         }
     });
 }
 
-async function doStuff(req, res, next, controller, pugFile) {
+async function doStuff(req, res, next, controller) {
     const app = req.app.app;
     let result = {};
     try {
@@ -44,7 +52,7 @@ async function doStuff(req, res, next, controller, pugFile) {
 
         //if (await if_rendered_send(app, req, res)) return;
 
-        result = wrap_promise(controller.call(req, res)); // TODO handle POST, HEAD, etc
+        result = wrap_promise(controller[req.method.toLowerCase()](req, res)); // TODO handle POST, HEAD, etc
         await app.sleep(1);
 
         // Allow up to 15 seconds for the request to finish, or redirect to the same URL to try again
@@ -87,10 +95,16 @@ async function doStuff(req, res, next, controller, pugFile) {
     }
 }
 
-function addGet(route, controller, pugFile) {
-    router.get(route, (req, res, next) => {
-        doStuff(req, res, next, controller, pugFile);
+function addRoute(routeType, route, controller) {
+    if (routes[routeType] == null) routes[routeType] = [];
+    if (routes[routeType].includes(route)) {
+        console.error('CONFLICT:', routeType, route, 'has already been mapped! Ignoring...');
+        return;
+    }
+    router[routeType](route, (req, res, next) => {
+        doStuff(req, res, next, controller);
     });
+    routes[routeType].push(route);
 }
 
 function verify_query_params(req, valid_array) {
