@@ -1,6 +1,6 @@
 {
   "name": "cvweiss-base",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "license": "MIT",
   "dependencies": {
     "async-redis": "^2.0.0",
@@ -28,8 +28,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com"
+    "url": "https://github.com/cvweiss/cvweiss-base"
   },
-  "author": "",
-  "description": ""
+  "author": "cvweiss",
+  "description": "A place to learn good practices and do them badly."
 }
