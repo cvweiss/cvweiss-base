@@ -50,8 +50,6 @@ async function doStuff(req, res, next, controller) {
     try {
         req.verify_query_params = verify_query_params;
 
-        //if (await if_rendered_send(app, req, res)) return;
-
         result = wrap_promise(controller[req.method.toLowerCase()](req, res)); // TODO handle POST, HEAD, etc
         await app.sleep(1);
 
@@ -80,7 +78,7 @@ async function doStuff(req, res, next, controller) {
             let render = compiled[result.view];
             let rendered = render(o, {
                 debug: true,
-                cache: false
+                cache: false,
             });
             
             res.send(rendered);
@@ -92,6 +90,7 @@ async function doStuff(req, res, next, controller) {
     } finally {
         result = {}; // Clear it out for quicker GC
         res.end();
+        next(req, res);
     }
 }
 
@@ -101,7 +100,7 @@ function addRoute(routeType, route, controller) {
         console.error('CONFLICT:', routeType, route, 'has already been mapped! Ignoring...');
         return;
     }
-    router[routeType](route, (req, res, next) => {
+    const ret = router[routeType](route, (req, res, next) => {
         doStuff(req, res, next, controller);
     });
     routes[routeType].push(route);
@@ -148,7 +147,6 @@ function verify_query_params(req, valid_array) {
         default:
             // If the data type passed is an array, then we need to make sure our value is within that array
             if (Array.isArray(valid_array[key])) {
-                console.log(key, query_params[key], valid_array[key]);
                 if (req.query[key].indexOf(query_params[key]) == -1) rebuild_required = true;
             } else {
                 // matching value provided, make sure we have that value
@@ -216,19 +214,6 @@ function rebuild_query(base_url, query_params, valid_array, required) {
         url += (key + '=' + rebuild[key]);
     }
     return url;
-}
-
-async function if_rendered_send(app, req, res) {
-    let render_cache_key = 'rendered:' + req.url;
-    let rendered = (app.redis ? await app.redis.get(render_cache_key) : null);
-    if (rendered != null) {
-        console.log(req.url, 'rendered sent');
-        res.set('Cache-Control', 'public, max-age=' + await app.redis.ttl(render_cache_key));
-        res.send(rendered);
-        res.end();
-        return true;
-    }
-    return false;
 }
 
 function wrap_promise(promise) {

@@ -33,11 +33,20 @@ async function startWebListener() {
     www.set('view engine', 'pug');
 
     if (process.env.ENABLE_ETAG == 'true') www.enable('etag');
+
+    const env = {};
+    if (process.env.env2res !== undefined) {
+        const keys = process.env.env2res.split(',');
+        for (const key of keys) {
+            const value = process.env[key];
+            env[key] = value;
+        }
+    }
     
     www.use((req, res, next) => {
         res.locals.server_started = server_started;
-        res.locals.googleua = process.env.googleua;
         res.locals.app = www.app;
+        res.locals.env = env;
         next();
     });
 
@@ -46,7 +55,7 @@ async function startWebListener() {
     www.disable('x-powered-by');
     www.use('/api/', require('cors')());
 
-    www.use('/', express.static(process.env.BASEPATH + 'www/public'));
+    www.use('/', express.static(process.env.BASEPATH + '/www/public'));
     let indexRouter = require('../www/routes.js');
     www.use('/', indexRouter);
 
@@ -57,11 +66,6 @@ async function startWebListener() {
     server.on('listening', onListening);
 
     console.log('Listening on port ' + process.env.PORT);
-
-    if (process.env.websocket == 'true') {
-        // Start the websocket
-        www.app.ws = require(__dirname + '/websocket');
-    }
 
     watch('www/', {recursive: true}, app.restart);
     watch('.env', {recursive: true}, app.restart);
