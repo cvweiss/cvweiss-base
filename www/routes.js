@@ -83,14 +83,11 @@ async function doStuff(req, res, next, controller) {
             
             res.send(rendered);
         } else res.send(result.package);
-
-
     } catch (e) {
-        console.log(e);
+        console.log('error', e);
     } finally {
         result = {}; // Clear it out for quicker GC
-        res.end();
-        next(req, res);
+        next();
     }
 }
 
